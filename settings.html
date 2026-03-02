@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>設定 / バックアップ</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<header>
+  <div class="left">
+    <h1>設定 / バックアップ</h1>
+    <span id="storageBadge" class="badge">保存先: 判定中…</span>
+  </div>
+  <nav>
+    <a class="btn" href="./index.html">メイン</a>
+    <a class="btn" href="./calendar.html">カレンダー</a>
+  </nav>
+</header>
+
+<main style="grid-template-columns: 1fr;">
+  <section class="panel">
+    <div class="form-head">
+      <div class="notice">
+        <strong>端末間共有（確認1=B）</strong>：このページでJSONをエクスポート→別端末でインポートしてください（手動同期）。
+      </div>
+    </div>
+
+    <details class="section" open>
+      <summary>本社便 非稼働日（ユーザー設定）</summary>
+      <div class="content">
+        <div class="grid">
+          <div class="field span6">
+            <label>追加する日付</label>
+            <div class="row">
+              <input id="hqAdd" type="date" />
+              <button id="hqAddBtn" class="btn">追加</button>
+            </div>
+          </div>
+          <div class="field span12">
+            <label>一覧</label>
+            <div id="hqList" class="notice"></div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" open>
+  <summary>納車センター 月別 非稼働日（ユーザー設定）</summary>
+  <div class="content">
+    <div class="grid">
+      <div class="field span4">
+        <label>対象月（YYYY-MM）</label>
+        <input id="dcMonth" type="month" />
+        <div class="small">月ごとの稼働案内が来たら、この月の「休み」だけをクリックで登録します。</div>
+      </div>
+      <div class="field span4">
+        <label>追加する日付（手入力でもOK）</label>
+        <div class="row">
+          <input id="dcAdd" type="date" />
+          <button id="dcAddBtn" class="btn">追加</button>
+        </div>
+      </div>
+      <div class="field span4">
+        <label>操作</label>
+        <div class="row wrap">
+          <button id="dcClearBtn" class="btn danger">この月の休みをクリア</button>
+          <button id="dcCopyBtn" class="btn">この月の休みをコピー</button>
+        </div>
+      </div>
+      <div class="field span12">
+        <label>クリックで休みON/OFF（保存は自動）</label>
+        <div id="dcCal" class="mini-cal"></div>
+      </div>
+      <div class="field span12">
+        <label>選択中の月の一覧</label>
+        <div id="dcList" class="notice"></div>
+      </div>
+    </div>
+    <div class="hint">※ ここで設定した日付に当たる場合、納車センター書類期限は前倒し調整されます。</div>
+  </div>
+</details>
+
+
+    <details class="section" open>
+      <summary>計算/再計算の挙動</summary>
+      <div class="content">
+        <div class="grid">
+          <div class="field span6">
+            <label>再計算で「手動上書きした期限」を保持</label>
+            <select id="keepManual">
+              <option value="true">保持する（推奨）</option>
+              <option value="false">毎回上書きする</option>
+            </select>
+          </div>
+          <div class="field span6">
+            <label>車庫証明のデフォルト営業日（任意）</label>
+            <input id="garageDefault" type="number" min="1" placeholder="未設定可" />
+            <div class="small">案件ごとの入力が優先されます。</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="section" open>
+      <summary>バックアップ</summary>
+      <div class="content">
+        <div class="grid">
+          <div class="field span6">
+            <label>エクスポート（JSON）</label>
+            <button id="btnExport" class="btn primary">エクスポート</button>
+            <div class="small">ダウンロードされたJSONを別端末へ移してください。</div>
+          </div>
+          <div class="field span6">
+            <label>インポート（JSON）</label>
+            <input id="fileImport" type="file" accept="application/json" />
+            <div class="small">既存データに「追加/上書き」されます（削除はしません）。</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <div class="footer-actions">
+      <a class="btn" href="./index.html">メインへ戻る</a>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="./settings.page.js"></script>
+</body>
+</html>
