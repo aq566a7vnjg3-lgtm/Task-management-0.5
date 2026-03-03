@@ -1,374 +1,535 @@
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>契約後タスク管理</title>
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-<header>
-  <div class="left">
-    <h1>契約後タスク管理（個人）</h1>
-    <span id="storageBadge" class="badge">保存先: 判定中…</span>
-  </div>
-  <nav>
-    <a class="btn" href="./calendar.html">カレンダー</a>
-    <a class="btn" href="./settings.html">設定/バックアップ</a>
-  </nav>
-</header>
+import {
+    uuid, todayStr, fmtJP, weekdayJP, clampStr,
+    ensureSettings, loadBuiltinHolidays, saveSettings,
+    loadAllCases, saveCase, deleteCase,
+    HOPE_NO_TYPES, TASK_DEFS,
+    validateForGenerate, generateTasks,
+    classifyDue, topDeadlines,
+    storageSupported,
+    parseISODate
+  } from './app.js';
 
-<main>
-  <section class="panel">
-    <div class="list-head">
-      <div class="row">
-        <input id="search" type="text" placeholder="検索（オーダー/フレーム/希望番号/ユーザー）" />
-        <button id="newCase" class="btn primary">＋新規</button>
-      </div>
-      <div class="row wrap">
-        <select id="filter">
-          <option value="all">すべて</option>
-          <option value="overdue">期限切れあり</option>
-          <option value="soon">3日以内あり</option>
-          <option value="uncompleted">未完了あり</option>
-        </select>
-        <select id="sort">
-          <option value="updated">更新が新しい順</option>
-          <option value="nextDue">次の期限が近い順</option>
-          <option value="delivery">納車日が近い順</option>
-        </select>
-      </div>
-      <div class="notice" id="listSummary"></div>
-    </div>
-    <div id="caseList" class="case-list"></div>
-  </section>
+  const $ = (id)=>document.getElementById(id);
+  const els = {
+    storageBadge: $('storageBadge'),
+    search: $('search'),
+    filter: $('filter'),
+    sort: $('sort'),
+    newCase: $('newCase'),
+    caseList: $('caseList'),
+    listSummary: $('listSummary'),
 
-  <section class="panel form-wrap">
-    <div class="form-head">
-      <div class="kpis" id="kpis"></div>
-      <div class="top-actions">
-        <button id="btnGenerate" class="btn primary">期限を生成</button>
-        <button id="btnRecalc" class="btn">再計算</button>
-        <button id="btnDelete" class="btn danger">削除</button>
-        <span class="small" id="missingHint"></span>
-      </div>
-      <div class="cards" id="topCards"></div>
-    </div>
+    emptyState: $('emptyState'),
+    form: $('form'),
+    kpis: $('kpis'),
+    topCards: $('topCards'),
+    missingHint: $('missingHint'),
 
-    <div class="form-body">
+    btnGenerate: $('btnGenerate'),
+    btnRecalc: $('btnRecalc'),
+    btnDelete: $('btnDelete'),
 
-      <div id="emptyState" class="hint">左の「＋新規」から案件を作成するか、一覧から案件を選んでください。</div>
+    // fields
+    orderNo: $('orderNo'),
+    userName: $('userName'),
+    tel: $('tel'),
+    orderDate: $('orderDate'),
+    carType: $('carType'),
+    regMethod: $('regMethod'),
+    regMethodHint: $('regMethodHint'),
+    hopeNoType: $('hopeNoType'),
+    deliveryPlace: $('deliveryPlace'),
+    mode: $('mode'),
+    factoryOutDate: $('factoryOutDate'),
+    deliveryDate: $('deliveryDate'),
+    deliveryTime: $('deliveryTime'),
+    frameNo: $('frameNo'),
+    hopeNo: $('hopeNo'),
+    noteNo: $('noteNo'),
+    tradeIn: $('tradeIn'),
 
-    <div id="form" style="display:none;">
-      <details class="section" open>
-        <summary>基本情報 <span class="badge">紙に近い入力</span></summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span3 req">
-              <label>オーダー番号（5桁）</label>
-              <input id="orderNo" type="text" inputmode="numeric" placeholder="例：01234" />
-            </div>
-            <div class="field span3">
-              <label>ユーザー</label>
-              <input id="userName" type="text" placeholder="例：坂口" />
-            </div>
-            <div class="field span3">
-              <label>連絡TEL</label>
-              <input id="tel" type="text" placeholder="例：090-xxxx-xxxx" />
-            </div>
-            <div class="field span3">
-              <label>受注日</label>
-              <input id="orderDate" type="date" />
-            </div>
+    hqSubmitDate: $('hqSubmitDate'),
+    docsCollectDate: $('docsCollectDate'),
+    garageRequired: $('garageRequired'),
+    garageDaysField: $('garageDaysField'),
+    garageLeadBusinessDays: $('garageLeadBusinessDays'),
+    hqArrivalDate: $('hqArrivalDate'),
+    regPlannedDate: $('regPlannedDate'),
+    regDate: $('regDate'),
+    regDone: $('regDone'),
 
-            <div class="field span3 req">
-              <label>車種区分</label>
-              <select id="carType">
-                <option value="">選択</option>
-                <option value="普通">普通車</option>
-                <option value="軽">軽自動車</option>
-              </select>
-            </div>
-            <div class="field span3 req">
-              <label>登録方法</label>
-              <select id="regMethod">
-                <option value="">選択</option>
-                <option value="OSS">OSS</option>
-                <option value="書類代行">書類代行</option>
-              </select>
-              <div class="small" id="regMethodHint"></div>
-            </div>
-            <div class="field span3 req">
-              <label>希望番号種別</label>
-              <select id="hopeNoType"></select>
-            </div>
-            <div class="field span3 req">
-              <label>納車場所</label>
-              <select id="deliveryPlace">
-                <option value="">選択</option>
-                <option value="拠点">拠点</option>
-                <option value="納車センター">納車センター</option>
-              </select>
-            </div>
+    dcReserved: $('dcReserved'),
+    dcReserveAt: $('dcReserveAt'),
+    dcDocsDueDate: $('dcDocsDueDate'),
+    dcDocsSent: $('dcDocsSent'),
+    dcDocsSentDate: $('dcDocsSentDate'),
 
-            <div class="field span3 req">
-              <label>算出モード</label>
-              <select id="mode">
-                <option value="">選択</option>
-                <option value="出庫日基準">出庫日基準</option>
-                <option value="納車日逆算">納車日逆算</option>
-              </select>
-            </div>
-            <div class="field span3">
-              <label>メーカー出庫日</label>
-              <input id="factoryOutDate" type="date" />
-            </div>
-            <div class="field span3">
-              <label>納車日</label>
-              <input id="deliveryDate" type="date" />
-            </div>
-            <div class="field span3">
-              <label>納車時間</label>
-              <input id="deliveryTime" type="time" />
-            </div>
+    contractType: $('contractType'),
+    paymentStartMonth: $('paymentStartMonth'),
+    loanDueDate: $('loanDueDate'),
 
-            <div class="field span3">
-              <label>フレーム番号</label>
-              <input id="frameNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>希望番号（数値/文字）</label>
-              <input id="hopeNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>注番</label>
-              <input id="noteNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>下取り</label>
-              <select id="tradeIn">
-                <option value="">未設定</option>
-                <option value="あり">あり</option>
-                <option value="なし">なし</option>
-              </select>
-            </div>
+    debtExists: $('debtExists'),
+    debtTransferRequested: $('debtTransferRequested'),
+
+    insuranceType: $('insuranceType'),
+    insuranceContact: $('insuranceContact'),
+
+    taskBody: $('taskBody'),
+    memo: $('memo'),
+  };
+
+  let settings = await ensureSettings();
+  const builtin = await loadBuiltinHolidays();
+  settings.holidays = builtin;
+  await saveSettings(settings);
+
+  els.storageBadge.textContent = (await storageSupported()) ? '保存先: IndexedDB' : '保存先: localStorage（簡易）';
+
+  // populate select
+  HOPE_NO_TYPES.forEach(v=>{
+    const opt=document.createElement('option'); opt.value=v; opt.textContent=v;
+    els.hopeNoType.appendChild(opt);
+  });
+  els.hopeNoType.insertAdjacentHTML('afterbegin','<option value="">選択</option>');
+
+  let cases = await loadAllCases();
+  let activeId = null;
+  let activeCase = null;
+
+  function nextDueISO(caseObj){
+    const dueList = [];
+    (caseObj.tasks||[]).forEach(t=>{ if(!t.done && t.dueDate) dueList.push(t.dueDate); });
+    if(caseObj.deliveryDate) dueList.push(caseObj.deliveryDate);
+    if(dueList.length===0) return null;
+    dueList.sort();
+    return dueList[0];
+  }
+
+  function bindCheckbox(el, key){
+    el.onchange = async ()=>{
+      if(!activeCase) return;
+      activeCase[key] = !!el.checked;
+      await persist();
+      renderList();
+      renderTopCards();
+    };
+  }
+
+  function applySort(list){
+    const s = els.sort.value;
+    const arr = [...list];
+    if(s==='updated'){
+      arr.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    }else if(s==='delivery'){
+      arr.sort((a,b)=>{
+        const ad=a.deliveryDate||'9999-12-31';
+        const bd=b.deliveryDate||'9999-12-31';
+        return ad.localeCompare(bd);
+      });
+    }else if(s==='nextDue'){
+      arr.sort((a,b)=>{
+        const ad=nextDueISO(a)||'9999-12-31';
+        const bd=nextDueISO(b)||'9999-12-31';
+        return ad.localeCompare(bd);
+      });
+    }
+    return arr;
+  }  function applyFilter(list){
+    const f = els.filter.value;
+    if(f==='all') return list;
+    if(f==='uncompleted') return list.filter(c=>(c.tasks||[]).some(t=>!t.done));
+    if(f==='overdue') return list.filter(c=> (c.tasks||[]).some(t=>!t.done && classifyDue(t.dueDate)==='overdue'));
+    if(f==='soon') return list.filter(c=> (c.tasks||[]).some(t=>!t.done && classifyDue(t.dueDate)==='soon'));
+    return list;
+  }  function applySearch(list){
+    const q = (els.search.value||'').trim();
+    if(!q) return list;
+    const qq = q.toLowerCase();
+    return list.filter(c=>{
+      const hay = [c.orderNo,c.frameNo,c.hopeNo,c.userName].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(qq);
+    });
+  }  function renderList(){
+    const base = applySearch(applyFilter(applySort(cases)));
+    els.caseList.innerHTML='';
+
+    // summary
+    const overdueCount = cases.filter(c=> (c.tasks||[]).some(t=>!t.done && classifyDue(t.dueDate)==='overdue')).length;
+    const soonCount = cases.filter(c=> (c.tasks||[]).some(t=>!t.done && classifyDue(t.dueDate)==='soon')).length;
+    els.listSummary.innerHTML = `<strong>全${cases.length}件</strong> ／ 期限切れ <strong style="color:var(--danger)">${overdueCount}</strong> ／ 3日以内 <strong style="color:var(--warn)">${soonCount}</strong>`;
+
+    if(base.length===0){
+      els.caseList.innerHTML = `<div class="hint">該当する案件がありません。</div>`;
+      return;
+    }
+
+    base.forEach(c=>{
+      const div=document.createElement('div');
+      div.className='case-item'+(c.id===activeId?' active':'');
+      const nd = nextDueISO(c);
+      const ndClass = classifyDue(nd);
+      const badge = nd ? `<span class="badge ${ndClass==='overdue'?'danger':ndClass==='soon'?'warn':''}">${fmtJP(nd)}(${weekdayJP(nd)})</span>` : `<span class="badge">期限なし</span>`;
+      div.innerHTML = `
+        <div>
+          <div class="title">${c.orderNo||'(未入力)'} <span class="small">${clampStr(c.userName||'',10)}</span></div>
+          <div class="meta">登録: ${(()=>{if(c.regDone) return '-'; const r=c.derived?.regDateAuto||c.regDate||c.derived?.regPlannedDate; return r?`${fmtJP(r)}(${weekdayJP(r)})`:'-';})()} ／ 納車センター書類: ${(()=>{const done=(c.tasks||[]).find(t=>t.key==='dc_docs_submit')?.done; if(done) return '-'; const d=c.derived?.dcDocsDueDate; return d?`${fmtJP(d)}(${weekdayJP(d)})`:'-';})()} ／ 希望番号申請: ${(()=>{const t=(c.tasks||[]).find(x=>x.key==='hope_no_apply'); if(t?.done) return '-'; const h=(c.derived?.hopeNoApplyDueDate)||t?.dueDate; return h?`${fmtJP(h)}(${weekdayJP(h)})`:'-';})()}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+          ${badge}
+          <span class="small">更新: ${new Date(c.updatedAt||0).toLocaleDateString('ja-JP')}</span>
+        </div>
+      `;
+      div.onclick=()=>selectCase(c.id);
+      els.caseList.appendChild(div);
+    });
+  }  function setRegMethodRules(){
+    if(els.carType.value==='軽' && els.regMethod.value==='OSS'){
+      els.regMethodHint.textContent='軽自動車はOSS不可のため「書類代行」に変更してください。';
+      els.regMethodHint.style.color='var(--danger)';
+    }else{
+      els.regMethodHint.textContent='';
+      els.regMethodHint.style.color='';
+    }
+  }  function renderKpis(){
+    if(!activeCase){ els.kpis.innerHTML=''; return; }
+    const overdue = (activeCase.tasks||[]).filter(t=>!t.done && classifyDue(t.dueDate)==='overdue').length;
+    const soon = (activeCase.tasks||[]).filter(t=>!t.done && classifyDue(t.dueDate)==='soon').length;
+    const unDone = (activeCase.tasks||[]).filter(t=>!t.done).length;
+    els.kpis.innerHTML = `
+      <span class="badge">未完了: <strong>${unDone}</strong></span>
+      <span class="badge danger">期限切れ: <strong>${overdue}</strong></span>
+      <span class="badge warn">3日以内: <strong>${soon}</strong></span>
+      <span class="badge">最終更新: <strong>${new Date(activeCase.updatedAt||0).toLocaleString('ja-JP')}</strong></span>
+    `;
+  }  function renderTopCards(){
+    if(!activeCase){ els.topCards.innerHTML=''; return; }
+    const tops = topDeadlines(activeCase);
+    if(tops.length===0){
+      els.topCards.innerHTML = `<div class="card"><div class="t">重要期限TOP5</div><div class="d">—</div><div class="p">期限を生成すると表示されます</div></div>`;
+      return;
+    }
+    els.topCards.innerHTML='';
+    tops.forEach(x=>{
+      const cls = classifyDue(x.iso);
+      const card=document.createElement('div');
+      card.className='card '+(cls==='overdue'?'danger':cls==='soon'?'warn':'');
+      card.innerHTML = `<div class="t">${x.label}</div><div class="d">${fmtJP(x.iso)}(${weekdayJP(x.iso)})</div><div class="p">${cls==='overdue'?'期限切れ':cls==='soon'?'まもなく':' '}</div>`;
+      els.topCards.appendChild(card);
+    });
+  }  function renderTasks(){
+    els.taskBody.innerHTML='';
+    (activeCase.tasks||[]).forEach(t=>{
+      const tr=document.createElement('tr');
+      const cls = classifyDue(t.dueDate);
+      const badgeClass = t.dueDateSource==='manual'?'manual':'auto';
+      const warnBadge = cls==='overdue' ? '<span class="badge danger">期限切れ</span>' : cls==='soon' ? '<span class="badge warn">3日以内</span>' : '';
+      tr.innerHTML = `
+        <td><input type="checkbox" ${t.done?'checked':''} /></td>
+        <td><div style="font-weight:650;">${t.title}${t.optional? ' <span class="badge">任意</span>':''}</div></td>
+        <td>
+          <div class="row">
+            <input type="date" value="${t.dueDate||''}" />
           </div>
-        </div>
-      </details>
+        </td>
+        <td>
+          <span class="badge ${badgeClass}">${t.dueDateSource==='manual'?'手動':'自動'}</span>
+          ${warnBadge}
+        </td>
+        <td><input type="text" value="${t.memo||''}" placeholder="メモ" /></td>
+      `;
+      const [chk, due, memo] = tr.querySelectorAll('input');
+      chk.onchange = async ()=>{
+        t.done = chk.checked;
+        t.doneAt = chk.checked ? new Date().toISOString() : null;
+        await persist();
+      };
+      due.onchange = async ()=>{
+        t.dueDate = due.value || null;
+        t.dueDateSource = t.dueDate ? 'manual' : 'auto';
+        await persist();
+      };
+      memo.onchange = async ()=>{
+        t.memo = memo.value;
+        await persist();
+      };
+      els.taskBody.appendChild(tr);
+    });
+  }  function fillForm(){
+    if(!activeCase){
+      els.form.style.display='none';
+      els.emptyState.style.display='block';
+      return;
+    }
+    els.emptyState.style.display='none';
+    els.form.style.display='block';
 
-      <details class="section" open>
-        <summary>登録・書類</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4 req">
-              <label>本社便へ書類を渡した日（登録書類提出日）</label>
-              <input id="hqSubmitDate" type="date" />
-              <div class="small">本社便が非稼働なら「次の稼働日」に繰り越して到着扱いになります。</div>
-            </div>
-            <div class="field span4">
-              <label>書類回収日</label>
-              <input id="docsCollectDate" type="date" />
-            </div>
-<div class="field span4">
-              <label>登録課 到着日（自動）</label>
-              <div class="row">
-                <input id="hqArrivalDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-            <div class="field span4">
-              <label>登録予定日（自動）</label>
-              <div class="row">
-                <input id="regPlannedDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-            <div class="field span4">
-              <label>登録日（手入力）</label>
-              <input id="regDate" type="date" />
-              <div class="inline-check"><label><input id="regDone" type="checkbox" /> 登録完了</label></div>
-            </div>
-          </div>
-        </div>
-      </details>
+    // base
+    els.orderNo.value = activeCase.orderNo||'';
+    els.userName.value = activeCase.userName||'';
+    els.tel.value = activeCase.tel||'';
+    els.orderDate.value = activeCase.orderDate||'';
+    els.carType.value = activeCase.carType||'';
+    els.regMethod.value = activeCase.regMethod||'';
+    els.hopeNoType.value = activeCase.hopeNoType||'';
+    els.deliveryPlace.value = activeCase.deliveryPlace||'';
+    els.mode.value = activeCase.mode||'';
+    els.factoryOutDate.value = activeCase.factoryOutDate||'';
+    els.deliveryDate.value = activeCase.deliveryDate||'';
+    els.deliveryTime.value = activeCase.deliveryTime||'';
+    els.frameNo.value = activeCase.frameNo||'';
+    els.hopeNo.value = activeCase.hopeNo||'';
+    els.noteNo.value = activeCase.noteNo||'';
+    els.tradeIn.value = activeCase.tradeIn||'';
 
-      
-      <details class="section" open>
-        <summary>車庫証明</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>車庫証明 必要/不要</label>
-              <select id="garageRequired">
-                <option value="">選択</option>
-                <option value="必要">必要</option>
-                <option value="不要">不要</option>
-              </select>
-              <div class="small">不要を選択すると、営業日入力と期限算出は行いません。</div>
-            </div>
+    // docs
+    els.hqSubmitDate.value = activeCase.hqSubmitDate||'';
+    els.docsCollectDate.value = activeCase.docsCollectDate||'';
+    els.garageRequired.value = activeCase.garageRequired||'';
+    els.garageLeadBusinessDays.value = (activeCase.garageLeadBusinessDays ?? '') ;
+    // 車庫証明：不要なら入力欄を非表示
+    if(els.garageRequired.value==='不要'){
+      if(els.garageDaysField) els.garageDaysField.style.display='none';
+    }else{
+      if(els.garageDaysField) els.garageDaysField.style.display='';
+    }
+    els.hqArrivalDate.value = activeCase.derived?.hqArrivalDate||'';
+    els.regPlannedDate.value = activeCase.derived?.regPlannedDate||'';
+    els.regDate.value = activeCase.regDate||'';
+    els.regDone.checked = !!activeCase.regDone;
 
-            <div class="field span4" id="garageDaysField">
-              <label>発行に必要な営業日</label>
-              <input id="garageLeadBusinessDays" type="number" min="1" placeholder="例：5" />
-              <div class="small">未入力なら「車庫証明提出」の期限は自動算出しません。</div>
-            </div>
-          </div>
-        </div>
-      </details>
+    // dc
+    els.dcReserved.value = activeCase.dcReserved||'';
+    els.dcReserveAt.value = activeCase.dcReserveAt||'';
+    els.dcDocsDueDate.value = activeCase.derived?.dcDocsDueDate||'';
+    els.dcDocsSent.value = activeCase.dcDocsSent||'';
+    els.dcDocsSentDate.value = activeCase.dcDocsSentDate||'';
 
-      <details class="section" open>
-        <summary>納車・納車センター</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>納車センター予約（完了）</label>
-              <select id="dcReserved">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="完了">完了</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>予約日時</label>
-              <input id="dcReserveAt" type="datetime-local" />
-            </div>
-            <div class="field span4">
-              <label>納車センター書類 期限（自動）</label>
-              <div class="row">
-                <input id="dcDocsDueDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-              <div class="small">水曜納車（例外）は6日前ルール → 月別非稼働日は前倒し調整。</div>
-            </div>
+    // loan
+    els.contractType.value = activeCase.contractType||'';
+    els.paymentStartMonth.value = activeCase.paymentStartMonth||'';
+    els.loanDueDate.value = activeCase.derived?.loanDueDate||'';
 
-            <div class="field span4">
-              <label>納車センター書類 送付（完了）</label>
-              <select id="dcDocsSent">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="完了">完了</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>送付日</label>
-              <input id="dcDocsSentDate" type="date" />
-            </div>
-          </div>
-        </div>
-      </details>
+    // debt
+    els.debtExists.value = activeCase.debtExists||'';
+    els.debtTransferRequested.value = activeCase.debtTransferRequested||'';
 
-      <details class="section" open>
-        <summary>支払・ローン</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>契約形態</label>
-              <select id="contractType">
-                <option value="">未設定</option>
-                <option value="現金">現金</option>
-                <option value="ローン">ローン</option>
-                <option value="リース">リース</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>支払開始月（ローン用）</label>
-              <input id="paymentStartMonth" type="month" />
-            </div>
-            <div class="field span4">
-              <label>ローン用紙提出期限（自動）</label>
-              <div class="row">
-                <input id="loanDueDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
+    // insurance
+    els.insuranceType.value = activeCase.insuranceType||'';
+    els.insuranceContact.value = activeCase.insuranceContact||'';
 
-      <details class="section" open>
-        <summary>下取り・残債</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>残債あり</label>
-              <select id="debtExists">
-                <option value="">未設定</option>
-                <option value="あり">あり</option>
-                <option value="なし">なし</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>残債振込依頼</label>
-              <select id="debtTransferRequested">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="依頼済">依頼済</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </details>
+    // memo
+    els.memo.value = activeCase.memo||'';
 
-      <details class="section" open>
-        <summary>保険</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>任意保険</label>
-              <select id="insuranceType">
-                <option value="">未設定</option>
-                <option value="自社">自社</option>
-                <option value="他社">他社</option>
-                <option value="未確認">未確認</option>
-              </select>
-            </div>
-            <div class="field span8">
-              <label>他社連絡先（他社の場合）</label>
-              <input id="insuranceContact" type="text" />
-            </div>
-          </div>
-        </div>
-      </details>
+    setRegMethodRules();
+    renderTasks();
+    renderKpis();
+    renderTopCards();
 
-      <details class="section" open>
-        <summary>タスク（10個）</summary>
-        <div class="content">
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width:26px;">✓</th>
-                <th>タスク</th>
-                <th style="width:170px;">期限</th>
-                <th style="width:110px;">区分</th>
-                <th>メモ</th>
-              </tr>
-            </thead>
-            <tbody id="taskBody"></tbody>
-          </table>
-          <div class="hint">期限は「自動」表示ですが、クリックして日付を変更すると「手動」になります（再計算でも保持）。</div>
-        </div>
-      </details>
+    updateGenerateButtons();
+  }
 
-      <details class="section" open>
-        <summary>備考</summary>
-        <div class="content">
-          <label>メモ</label>
-          <textarea id="memo" placeholder="自由記入"></textarea>
-        </div>
-      </details>
+  async function persist(){
+    if(!activeCase) return;
+    activeCase = await saveCase(activeCase);
+    // refresh list state
+    cases = await loadAllCases();
+    renderList();
+    renderKpis();
+    renderTopCards();
+    updateGenerateButtons();
+  }  function bindField(el, key, transform=(v)=>v){
+    el.onchange = async ()=>{
+      if(!activeCase) return;
+      activeCase[key] = transform(el.value);
+      setRegMethodRules();
+      await persist();
+    };
+  }  function updateGenerateButtons(){
+    if(!activeCase){
+      els.btnGenerate.disabled = true;
+      els.btnRecalc.disabled = true;
+      els.btnDelete.disabled = true;
+      els.missingHint.textContent='';
+      return;
+    }
+    els.btnDelete.disabled=false;
 
-      <div class="footer-actions">
-        <span class="small">※iPad/PCどちらでも使用可。端末間で共有する場合は「設定/バックアップ」からJSONをエクスポート→インポートしてください。</span>
-      </div>
-    </div>
-    </div><!-- /form-body -->
-  </section>
-</main>
+    const missing = validateForGenerate(activeCase);
+    const can = missing.length===0;
+    els.btnGenerate.disabled = !can;
+    els.btnRecalc.disabled = !can;
+    els.missingHint.textContent = can ? '' : `不足: ${missing.join('、')}`;
+  }
 
-<script type="module" src="./index.page.js"></script>
+  async function selectCase(id){
+    activeId = id;
+    activeCase = cases.find(c=>c.id===id) || null;
+    fillForm();
+    renderList();
+  }
 
-  <div style="position:fixed;right:12px;bottom:12px;z-index:50;">
-    <a href="./tests.html" title="ロジック簡易テスト" style="display:inline-block;padding:10px 12px;border:1px solid #d1d5db;border-radius:999px;text-decoration:none;color:inherit;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.08);">テスト</a>
-  </div>
-</body>
-</html>
+  async function createNew(){
+    const c = {
+      id: uuid(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      orderNo: '',
+      userName: '',
+      tel: '',
+      orderDate: todayStr(),
+      carType: '普通車',
+      regMethod: '書類代行',
+      hopeNoType: '希望番号なし',
+      deliveryPlace: '拠点',
+      mode: '出庫日基準',
+      factoryOutDate: '',
+      deliveryDate: '',
+      deliveryTime: '',
+      frameNo: '',
+      hopeNo: '',
+      noteNo: '',
+      tradeIn: '',
+
+      hqSubmitDate: '',
+      docsCollectDate: '',
+      garageRequired: '必要',
+      garageLeadBusinessDays: null,
+      regDate: '',
+
+      dcReserved: '',
+      dcReserveAt: '',
+      dcDocsSent: '',
+      dcDocsSentDate: '',
+
+      contractType: '現金',
+      paymentStartMonth: '',
+
+      debtExists: '',
+      debtTransferRequested: '',
+
+      insuranceType: '',
+      insuranceContact: '',
+
+      memo: '',
+
+      tasks: [],
+      derived: {},
+    };
+    c.tasks = TASK_DEFS.map(d=>({
+      id: uuid(), key:d.key, title:d.title, optional:d.optional,
+      done:false, doneAt:null,
+      dueDate:null, dueDateSource:'auto', memo:''
+    }));
+
+    const saved = await saveCase(c);
+    cases = await loadAllCases();
+    activeId = saved.id;
+    activeCase = saved;
+    renderList();
+    fillForm();
+  }
+
+  async function doGenerate(isRecalc){
+    const missing = validateForGenerate(activeCase);
+    if(missing.length){
+      alert('不足項目があります:\n' + missing.join('\n'));
+      return;
+    }
+    const { tasks, derived } = generateTasks(activeCase, settings);
+    activeCase.tasks = tasks;
+    activeCase.derived = derived;
+    await persist();
+    alert(isRecalc ? '再計算しました' : '期限を生成しました');
+  }
+
+  async function doDelete(){
+    if(!activeCase) return;
+    const ok = confirm(`案件 ${activeCase.orderNo||''} を削除します。よろしいですか？`);
+    if(!ok) return;
+    await deleteCase(activeCase.id);
+    cases = await loadAllCases();
+    activeId = null;
+    activeCase = null;
+    renderList();
+    fillForm();
+  }
+
+  // bind general list UI
+  els.newCase.onclick = createNew;
+  els.search.oninput = renderList;
+  els.filter.onchange = renderList;
+  els.sort.onchange = renderList;
+
+  // buttons
+  els.btnGenerate.onclick = ()=>doGenerate(false);
+  els.btnRecalc.onclick = ()=>doGenerate(true);
+  els.btnDelete.onclick = doDelete;
+
+  // bind fields
+  bindField(els.orderNo,'orderNo', v=>v.trim());
+  bindField(els.userName,'userName', v=>v.trim());
+  bindField(els.tel,'tel', v=>v.trim());
+  bindField(els.orderDate,'orderDate');
+  bindField(els.carType,'carType');
+  bindField(els.regMethod,'regMethod');
+  bindField(els.hopeNoType,'hopeNoType');
+  bindField(els.deliveryPlace,'deliveryPlace');
+  bindField(els.mode,'mode');
+  bindField(els.factoryOutDate,'factoryOutDate');
+  bindField(els.deliveryDate,'deliveryDate');
+  bindField(els.deliveryTime,'deliveryTime');
+  bindField(els.frameNo,'frameNo');
+  bindField(els.hopeNo,'hopeNo');
+  bindField(els.noteNo,'noteNo');
+  bindField(els.tradeIn,'tradeIn');
+
+  bindField(els.hqSubmitDate,'hqSubmitDate');
+  bindField(els.docsCollectDate,'docsCollectDate');
+
+  // 車庫証明 必要/不要（不要なら営業日をクリアして非表示）
+  els.garageRequired.onchange = async ()=>{
+    if(!activeCase) return;
+    activeCase.garageRequired = els.garageRequired.value;
+    if(els.garageRequired.value==='不要'){
+      activeCase.garageLeadBusinessDays = null;
+      if(els.garageLeadBusinessDays) els.garageLeadBusinessDays.value = '';
+      if(els.garageDaysField) els.garageDaysField.style.display='none';
+    }else{
+      if(els.garageDaysField) els.garageDaysField.style.display='';
+    }
+    await persist();
+  };
+
+  bindField(els.garageLeadBusinessDays,'garageLeadBusinessDays', v=> v? Number(v): null);
+  bindField(els.regDate,'regDate');
+  bindCheckbox(els.regDone,'regDone');
+
+  bindField(els.dcReserved,'dcReserved');
+  bindField(els.dcReserveAt,'dcReserveAt');
+  bindField(els.dcDocsSent,'dcDocsSent');
+  bindField(els.dcDocsSentDate,'dcDocsSentDate');
+
+  bindField(els.contractType,'contractType');
+  bindField(els.paymentStartMonth,'paymentStartMonth');
+
+  bindField(els.debtExists,'debtExists');
+  bindField(els.debtTransferRequested,'debtTransferRequested');
+
+  bindField(els.insuranceType,'insuranceType');
+  bindField(els.insuranceContact,'insuranceContact');
+
+  bindField(els.memo,'memo');
+
+  // initial
+  renderList();
+  fillForm();
+
+  // open case from calendar link
+  try{
+    const h = location.hash || '';
+    if(h.startsWith('#case=')){
+      const id = decodeURIComponent(h.slice(6));
+      const found = cases.find(c=>c.id===id);
+      if(found) selectCase(found.id);
+    }
+  }catch{}
