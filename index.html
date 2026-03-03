@@ -69,7 +69,7 @@
               <input id="orderNo" type="text" inputmode="numeric" placeholder="例：01234" />
             </div>
             <div class="field span3">
-              <label>ユーザー</label>
+              <label>ユーザー（担当）</label>
               <input id="userName" type="text" placeholder="例：坂口" />
             </div>
             <div class="field span3">
@@ -137,7 +137,7 @@
               <input id="frameNo" type="text" />
             </div>
             <div class="field span3">
-              <label>希望番号（数値）</label>
+              <label>希望番号（数値/文字）</label>
               <input id="hopeNo" type="text" />
             </div>
             <div class="field span3">
@@ -161,7 +161,7 @@
         <div class="content">
           <div class="grid">
             <div class="field span4 req">
-              <label>登録書類便乗せ（登録書類提出日）</label>
+              <label>本社便へ書類を渡した日（登録書類提出日）</label>
               <input id="hqSubmitDate" type="date" />
               <div class="small">本社便が非稼働なら「次の稼働日」に繰り越して到着扱いになります。</div>
             </div>
@@ -253,11 +253,11 @@
               </select>
             </div>
             <div class="field span4">
-              <label>支払開始月</label>
+              <label>支払開始月（ローン用）</label>
               <input id="paymentStartMonth" type="month" />
             </div>
             <div class="field span4">
-              <label>実行依頼期限（自動）</label>
+              <label>ローン用紙提出期限（自動）</label>
               <div class="row">
                 <input id="loanDueDate" type="date" disabled />
                 <span class="badge auto">自動</span>
@@ -318,7 +318,7 @@
           <table class="table">
             <thead>
               <tr>
-                <th style="width:100px;">✓</th>
+                <th style="width:26px;">✓</th>
                 <th>タスク</th>
                 <th style="width:170px;">期限</th>
                 <th style="width:110px;">区分</th>

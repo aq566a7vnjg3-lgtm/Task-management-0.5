@@ -50,6 +50,8 @@ import {
 
     hqSubmitDate: $('hqSubmitDate'),
     docsCollectDate: $('docsCollectDate'),
+    garageNeeded: $('garageNeeded'),
+    garageLeadWrap: $('garageLeadWrap'),
     garageLeadBusinessDays: $('garageLeadBusinessDays'),
     hqArrivalDate: $('hqArrivalDate'),
     regPlannedDate: $('regPlannedDate'),
@@ -180,7 +182,30 @@ import {
       div.onclick=()=>selectCase(c.id);
       els.caseList.appendChild(div);
     });
-  }  function setRegMethodRules(){
+  }
+  function updateGarageVisibility(){
+    if(!activeCase) return;
+    const need = (activeCase.garageNeeded || '必要');
+    if(els.garageNeeded) els.garageNeeded.value = need;
+    if(els.garageLeadWrap){
+      els.garageLeadWrap.style.display = (need==='不要') ? 'none' : '';
+    }
+    // 「不要」の場合は、車庫証明関連の入力/期限をクリア（自動分のみ）
+    if(need==='不要'){
+      activeCase.garageLeadBusinessDays = null;
+      if(els.garageLeadBusinessDays) els.garageLeadBusinessDays.value = '';
+      if(activeCase.derived){
+        activeCase.derived.garageCertDueDate = null;
+      }
+      const t = (activeCase.tasks||[]).find(x=>x.key==='garage_cert_submit');
+      if(t && t.dueDateSource!=='manual'){
+        t.dueDate = null;
+        t.dueDateSource = 'auto';
+      }
+    }
+  }
+
+  function setRegMethodRules(){
     if(els.carType.value==='軽' && els.regMethod.value==='OSS'){
       els.regMethodHint.textContent='軽自動車はOSS不可のため「書類代行」に変更してください。';
       els.regMethodHint.style.color='var(--danger)';
@@ -282,6 +307,7 @@ import {
     // docs
     els.hqSubmitDate.value = activeCase.hqSubmitDate||'';
     els.docsCollectDate.value = activeCase.docsCollectDate||'';
+    els.garageNeeded.value = (activeCase.garageNeeded || '必要');
     els.garageLeadBusinessDays.value = (activeCase.garageLeadBusinessDays ?? '') ;
     els.hqArrivalDate.value = activeCase.derived?.hqArrivalDate||'';
     els.regPlannedDate.value = activeCase.derived?.regPlannedDate||'';
@@ -312,6 +338,7 @@ import {
     els.memo.value = activeCase.memo||'';
 
     setRegMethodRules();
+    updateGarageVisibility();
     renderTasks();
     renderKpis();
     renderTopCards();
@@ -383,6 +410,7 @@ import {
 
       hqSubmitDate: '',
       docsCollectDate: '',
+      garageNeeded: '必要',
       garageLeadBusinessDays: null,
       regDate: '',
 
@@ -475,6 +503,13 @@ import {
 
   bindField(els.hqSubmitDate,'hqSubmitDate');
   bindField(els.docsCollectDate,'docsCollectDate');
+  bindField(els.garageNeeded,'garageNeeded', v=> v || '必要');
+  els.garageNeeded.onchange = async ()=>{
+    if(!activeCase) return;
+    activeCase.garageNeeded = els.garageNeeded.value || '必要';
+    updateGarageVisibility();
+    await persist();
+  };
   bindField(els.garageLeadBusinessDays,'garageLeadBusinessDays', v=> v? Number(v): null);
   bindField(els.regDate,'regDate');
   bindCheckbox(els.regDone,'regDone');
