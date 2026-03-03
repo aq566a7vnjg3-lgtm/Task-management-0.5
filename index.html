@@ -1,352 +1,129 @@
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>契約後タスク管理</title>
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-<header>
-  <div class="left">
-    <h1>契約後タスク管理（個人）</h1>
-    <span id="storageBadge" class="badge">保存先: 判定中…</span>
-  </div>
-  <nav>
-    <a class="btn" href="./calendar.html">カレンダー</a>
-    <a class="btn" href="./settings.html">設定/バックアップ</a>
-  </nav>
-</header>
+import {
+    ensureSettings, loadBuiltinHolidays, saveSettings,
+    loadAllCases, classifyDue,
+    storageSupported
+  } from './app.js';
 
-<main>
-  <section class="panel">
-    <div class="list-head">
-      <div class="row">
-        <input id="search" type="text" placeholder="検索（オーダー/フレーム/希望番号/ユーザー）" />
-        <button id="newCase" class="btn primary">＋新規</button>
-      </div>
-      <div class="row wrap">
-        <select id="filter">
-          <option value="all">すべて</option>
-          <option value="overdue">期限切れあり</option>
-          <option value="soon">3日以内あり</option>
-          <option value="uncompleted">未完了あり</option>
-        </select>
-        <select id="sort">
-          <option value="updated">更新が新しい順</option>
-          <option value="nextDue">次の期限が近い順</option>
-          <option value="delivery">納車日が近い順</option>
-        </select>
-      </div>
-      <div class="notice" id="listSummary"></div>
-    </div>
-    <div id="caseList" class="case-list"></div>
-  </section>
+  const $ = (id)=>document.getElementById(id);
+  const els = {
+    storageBadge: $('storageBadge'),
+    prev: $('prev'),
+    next: $('next'),
+    month: $('month'),
+    viewFilter: $('viewFilter'),
+    grid: $('grid'),
+  };
 
-  <section class="panel form-wrap">
-    <div class="form-head">
-      <div class="kpis" id="kpis"></div>
-      <div class="top-actions">
-        <button id="btnGenerate" class="btn primary">期限を生成</button>
-        <button id="btnRecalc" class="btn">再計算</button>
-        <button id="btnDelete" class="btn danger">削除</button>
-        <span class="small" id="missingHint"></span>
-      </div>
-      <div class="cards" id="topCards"></div>
-    </div>
+  let settings = await ensureSettings();
+  settings.holidays = await loadBuiltinHolidays();
+  await saveSettings(settings);
 
-    <div class="form-body">
+  els.storageBadge.textContent = (await storageSupported()) ? '保存先: IndexedDB' : '保存先: localStorage（簡易）';
 
-      <div id="emptyState" class="hint">左の「＋新規」から案件を作成するか、一覧から案件を選んでください。</div>
+  let cases = await loadAllCases();
 
-    <div id="form" style="display:none;">
-      <details class="section" open>
-        <summary>基本情報 <span class="badge">紙に近い入力</span></summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span3 req">
-              <label>オーダー番号（5桁）</label>
-              <input id="orderNo" type="text" inputmode="numeric" placeholder="例：01234" />
-            </div>
-            <div class="field span3">
-              <label>ユーザー（担当）</label>
-              <input id="userName" type="text" placeholder="例：坂口" />
-            </div>
-            <div class="field span3">
-              <label>連絡TEL</label>
-              <input id="tel" type="text" placeholder="例：090-xxxx-xxxx" />
-            </div>
-            <div class="field span3">
-              <label>受注日</label>
-              <input id="orderDate" type="date" />
-            </div>
+  function ymNow(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
 
-            <div class="field span3 req">
-              <label>車種区分</label>
-              <select id="carType">
-                <option value="">選択</option>
-                <option value="普通">普通車</option>
-                <option value="軽">軽自動車</option>
-              </select>
-            </div>
-            <div class="field span3 req">
-              <label>登録方法</label>
-              <select id="regMethod">
-                <option value="">選択</option>
-                <option value="OSS">OSS</option>
-                <option value="書類代行">書類代行</option>
-              </select>
-              <div class="small" id="regMethodHint"></div>
-            </div>
-            <div class="field span3 req">
-              <label>希望番号種別</label>
-              <select id="hopeNoType"></select>
-            </div>
-            <div class="field span3 req">
-              <label>納車場所</label>
-              <select id="deliveryPlace">
-                <option value="">選択</option>
-                <option value="拠点">拠点</option>
-                <option value="納車センター">納車センター</option>
-              </select>
-            </div>
+  els.month.value = ymNow();
 
-            <div class="field span3 req">
-              <label>算出モード</label>
-              <select id="mode">
-                <option value="">選択</option>
-                <option value="出庫日基準">出庫日基準</option>
-                <option value="納車日逆算">納車日逆算</option>
-              </select>
-            </div>
-            <div class="field span3">
-              <label>メーカー出庫日</label>
-              <input id="factoryOutDate" type="date" />
-            </div>
-            <div class="field span3">
-              <label>納車日</label>
-              <input id="deliveryDate" type="date" />
-            </div>
-            <div class="field span3">
-              <label>納車時間</label>
-              <input id="deliveryTime" type="time" />
-            </div>
+  function buildEvents(){
+    const f = els.viewFilter.value;
+    const events = [];
+    cases.forEach(c=>{
+      // Registration milestone (hide if marked complete)
+      const regISO = c.derived?.regDateAuto || c.regDate || c.derived?.regPlannedDate;
+      if(regISO && !c.regDone){
+        events.push({
+          date: regISO,
+          title: `${c.orderNo||''} 登録日`,
+          caseId: c.id,
+          urgency: classifyDue(regISO),
+          key: '__reg__'
+        });
+      }
+      (c.tasks||[]).forEach(t=>{
+        if(!t.dueDate) return;
+        if(t.done) return;
+                if(f==='important'){
+          // show only auto-derived key deadlines + uncompleted
+          const importantKeys = new Set(['__reg__','dc_docs_submit','loan_paper_submit','payment_check_thanks','garage_cert_submit']);
+          if(!importantKeys.has(t.key)) return;
+        }
+        events.push({
+          date: t.dueDate,
+          title: `${c.orderNo||''} ${t.title}`,
+          caseId: c.id,
+          urgency: classifyDue(t.dueDate)
+        });
+      });
+    });
+    return events;
+  }
 
-            <div class="field span3">
-              <label>フレーム番号</label>
-              <input id="frameNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>希望番号（数値/文字）</label>
-              <input id="hopeNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>注番</label>
-              <input id="noteNo" type="text" />
-            </div>
-            <div class="field span3">
-              <label>下取り</label>
-              <select id="tradeIn">
-                <option value="">未設定</option>
-                <option value="あり">あり</option>
-                <option value="なし">なし</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </details>
+  function render(){
+    const ym = els.month.value;
+    if(!ym) return;
+    const [Y,M] = ym.split('-').map(Number);
+    const first = new Date(Y, M-1, 1);
+    const start = new Date(first);
+    // align to Sunday
+    start.setDate(first.getDate() - first.getDay());
 
-      <details class="section" open>
-        <summary>登録・書類</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4 req">
-              <label>本社便へ書類を渡した日（登録書類提出日）</label>
-              <input id="hqSubmitDate" type="date" />
-              <div class="small">本社便が非稼働なら「次の稼働日」に繰り越して到着扱いになります。</div>
-            </div>
-            <div class="field span4">
-              <label>書類回収日</label>
-              <input id="docsCollectDate" type="date" />
-            </div>
-            <div class="field span4">
-              <label>車庫証明（発行に必要な営業日）</label>
-              <input id="garageLeadBusinessDays" type="number" min="1" placeholder="例：5" />
-              <div class="small">未入力なら「車庫証明提出」の期限は自動算出しません。</div>
-            </div>
+    const events = buildEvents();
+    const byDate = new Map();
+    events.forEach(e=>{
+      if(!byDate.has(e.date)) byDate.set(e.date, []);
+      byDate.get(e.date).push(e);
+    });
 
-            <div class="field span4">
-              <label>登録課 到着日（自動）</label>
-              <div class="row">
-                <input id="hqArrivalDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-            <div class="field span4">
-              <label>登録予定日（自動）</label>
-              <div class="row">
-                <input id="regPlannedDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-            <div class="field span4">
-              <label>登録日（手入力）</label>
-              <input id="regDate" type="date" />
-              <div class="inline-check"><label><input id="regDone" type="checkbox" /> 登録完了</label></div>
-            </div>
-          </div>
-        </div>
-      </details>
+    els.grid.innerHTML='';
+    // 6 weeks
+    for(let i=0;i<42;i++){
+      const d = new Date(start);
+      d.setDate(start.getDate()+i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-      <details class="section" open>
-        <summary>納車・納車センター</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>納車センター予約（完了）</label>
-              <select id="dcReserved">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="完了">完了</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>予約日時</label>
-              <input id="dcReserveAt" type="datetime-local" />
-            </div>
-            <div class="field span4">
-              <label>納車センター書類 期限（自動）</label>
-              <div class="row">
-                <input id="dcDocsDueDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-              <div class="small">水曜納車（例外）は6日前ルール → 月別非稼働日は前倒し調整。</div>
-            </div>
+      const cell = document.createElement('div');
+      cell.className = 'day';
+      cell.innerHTML = `<div class="num">${d.getDate()}</div>`;
 
-            <div class="field span4">
-              <label>納車センター書類 送付（完了）</label>
-              <select id="dcDocsSent">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="完了">完了</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>送付日</label>
-              <input id="dcDocsSentDate" type="date" />
-            </div>
-          </div>
-        </div>
-      </details>
+      const evs = (byDate.get(iso)||[]).slice().sort((a,b)=>a.title.localeCompare(b.title));
+      evs.slice(0,5).forEach(e=>{
+        const div = document.createElement('div');
+        div.className = 'event ' + (e.urgency==='overdue'?'urgent': e.urgency==='soon'?'soon':'');
+        div.textContent = e.title;
+        div.onclick = ()=>{
+          // navigate to main with hash caseId
+          location.href = `./index.html#case=${encodeURIComponent(e.caseId)}`;
+        };
+        cell.appendChild(div);
+      });
+      if(evs.length>5){
+        const more = document.createElement('div');
+        more.className='small';
+        more.style.marginTop='6px';
+        more.textContent = `ほか ${evs.length-5}件`;
+        cell.appendChild(more);
+      }
 
-      <details class="section" open>
-        <summary>支払・ローン</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>契約形態</label>
-              <select id="contractType">
-                <option value="">未設定</option>
-                <option value="現金">現金</option>
-                <option value="ローン">ローン</option>
-                <option value="リース">リース</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>支払開始月（ローン用）</label>
-              <input id="paymentStartMonth" type="month" />
-            </div>
-            <div class="field span4">
-              <label>ローン用紙提出期限（自動）</label>
-              <div class="row">
-                <input id="loanDueDate" type="date" disabled />
-                <span class="badge auto">自動</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
+      els.grid.appendChild(cell);
+    }
+  }
 
-      <details class="section" open>
-        <summary>下取り・残債</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>残債あり</label>
-              <select id="debtExists">
-                <option value="">未設定</option>
-                <option value="あり">あり</option>
-                <option value="なし">なし</option>
-              </select>
-            </div>
-            <div class="field span4">
-              <label>残債振込依頼</label>
-              <select id="debtTransferRequested">
-                <option value="">未設定</option>
-                <option value="未">未</option>
-                <option value="依頼済">依頼済</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </details>
+  function shiftMonth(delta){
+    const ym = els.month.value;
+    const [y,m] = ym.split('-').map(Number);
+    const d = new Date(y, m-1+delta, 1);
+    els.month.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    render();
+  }
 
-      <details class="section" open>
-        <summary>保険</summary>
-        <div class="content">
-          <div class="grid">
-            <div class="field span4">
-              <label>任意保険</label>
-              <select id="insuranceType">
-                <option value="">未設定</option>
-                <option value="自社">自社</option>
-                <option value="他社">他社</option>
-                <option value="未確認">未確認</option>
-              </select>
-            </div>
-            <div class="field span8">
-              <label>他社連絡先（他社の場合）</label>
-              <input id="insuranceContact" type="text" />
-            </div>
-          </div>
-        </div>
-      </details>
+  els.prev.onclick = ()=>shiftMonth(-1);
+  els.next.onclick = ()=>shiftMonth(1);
+  els.month.onchange = render;
+  els.viewFilter.onchange = render;
 
-      <details class="section" open>
-        <summary>タスク（10個）</summary>
-        <div class="content">
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width:26px;">✓</th>
-                <th>タスク</th>
-                <th style="width:170px;">期限</th>
-                <th style="width:110px;">区分</th>
-                <th>メモ</th>
-              </tr>
-            </thead>
-            <tbody id="taskBody"></tbody>
-          </table>
-          <div class="hint">期限は「自動」表示ですが、クリックして日付を変更すると「手動」になります（再計算でも保持）。</div>
-        </div>
-      </details>
-
-      <details class="section" open>
-        <summary>備考</summary>
-        <div class="content">
-          <label>メモ</label>
-          <textarea id="memo" placeholder="自由記入"></textarea>
-        </div>
-      </details>
-
-      <div class="footer-actions">
-        <span class="small">※iPad/PCどちらでも使用可。端末間で共有する場合は「設定/バックアップ」からJSONをエクスポート→インポートしてください。</span>
-      </div>
-    </div>
-    </div><!-- /form-body -->
-  </section>
-</main>
-
-<script type="module" src="./index.page.js"></script>
-</body>
-</html>
+  render();

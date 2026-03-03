@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ロジック簡易テスト | WEB契約タスク管理アプリ</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    /* tests page only */
+    .tests-wrap{max-width:1100px;margin:0 auto;padding:14px;}
+    .tests-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .tests-head h1{font-size:18px;margin:0;}
+    .tests-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .tests-actions button,.tests-actions a{padding:8px 10px;border-radius:10px;border:1px solid #d1d5db;background:#fff;cursor:pointer;text-decoration:none;color:inherit;}
+    .tests-actions button:hover,.tests-actions a:hover{background:#f3f4f6;}
+    .tests-note{margin-top:10px;color:#374151;font-size:13px;line-height:1.6;}
+    .tests-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px;}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border-bottom:1px solid #e5e7eb;padding:8px 6px;vertical-align:top;}
+    th{color:#374151;text-align:left;white-space:nowrap;}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid #e5e7eb;}
+    .ok{background:#ecfdf5;border-color:#a7f3d0;}
+    .ng{background:#fef2f2;border-color:#fecaca;}
+    .muted{color:#6b7280;}
+    code{background:#f3f4f6;padding:1px 6px;border-radius:8px;}
+  </style>
+</head>
+<body>
+  <div class="tests-wrap">
+    <div class="tests-head">
+      <h1>ロジック簡易テスト（v1.1互換）</h1>
+      <div class="tests-actions">
+        <button id="runBtn">テスト実行</button>
+        <button id="runBtnNoCache" title="祝日JSONを再読込して実行します">祝日再読込して実行</button>
+        <a href="./index.html">案件一覧へ戻る</a>
+        <a href="./settings.html">設定へ</a>
+      </div>
+    </div>
+
+    <div class="tests-note card">
+      <div>目的：改修でロジックが壊れていないかを、<b>このページだけ</b>で即確認できるようにするための簡易テストです。</div>
+      <div class="muted" style="margin-top:6px;">
+        ※「OK/NG」は期待値との一致判定です（UTCずれ対策として全て <code>YYYY-MM-DD</code> の日付文字列で比較）。<br>
+        ※ DC非稼働は <b>土日祝を見ません</b>（設定に登録された日付のみ休み）という現仕様に合わせています。
+      </div>
+    </div>
+
+    <div class="tests-grid">
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:78px;">結果</th>
+              <th style="width:220px;">テスト名</th>
+              <th>入力</th>
+              <th style="width:210px;">期待値</th>
+              <th style="width:210px;">実測値</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="5" class="muted">未実行です。「テスト実行」を押してください。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card muted">
+        <div><b>追加したいケース例</b>（必要になったらこのページに追記して増やしていく想定）</div>
+        <ul style="margin:8px 0 0 18px;">
+          <li>納車日が祝日のとき：登録日寄せ／本社便寄せが正しいか</li>
+          <li>希望図柄（中8）で月跨ぎ：申請期限が正しいか</li>
+          <li>DC非稼働日に納車センター書類期限が当たる：前倒しされるか</li>
+          <li>車庫証明：必要/不要の切替で期限表示が抑制されるか（UI側含む）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./tests.page.js"></script>
+</body>
+</html>
