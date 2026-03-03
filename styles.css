@@ -233,3 +233,36 @@ label{display:block; font-size:12px; color:var(--muted); margin:0 0 6px;}
   .panel{min-height:auto;}
   .field{grid-column: span 12;}
 }
+
+
+/* ===== 横スクロール完全防止 ===== */
+html, body {
+  overflow-x: hidden;
+}
+
+main, .panel, .form-wrap {
+  overflow-x: hidden;
+}
+
+.grid {
+  min-width: 0;
+}
+
+.field, .row, .table {
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.table th, .table td {
+  word-break: break-word;
+}
+
+/* inputがはみ出さないように */
+input, select, textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+}
